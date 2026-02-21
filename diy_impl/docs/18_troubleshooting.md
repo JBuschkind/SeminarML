@@ -164,7 +164,18 @@ model:
 
 **Lösung**: Überprüfen Sie die TensorBoard Logs oder Console Output.
 
-### 10. Schlechte Predictions
+### 10. TypeError: got multiple values for keyword argument
+
+**Fehler**:
+```
+TypeError: AugmentationPipeline() got multiple values for keyword argument 'horizontal_flip'
+```
+
+**Ursache**: Die Augmentation-Funktionen hatten ein Problem mit doppelten Argumenten.
+
+**Lösung**: Bereits behoben in der aktuellen Version. Falls das Problem weiterhin auftritt, aktualisieren Sie den Code.
+
+### 11. Schlechte Predictions
 
 **Mögliche Ursachen**:
 1. Modell nicht ausreichend trainiert → Mehr Epochs

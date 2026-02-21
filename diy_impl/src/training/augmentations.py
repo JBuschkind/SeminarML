@@ -231,30 +231,38 @@ class AugmentationPipeline:
 
 def get_train_augmentation(**kwargs):
     """Get augmentation pipeline for training."""
-    return AugmentationPipeline(
-        horizontal_flip=True,
-        vertical_flip=True,
-        rotation=True,
-        rotation_range=(-15, 15),
-        color_jitter=True,
-        elastic_deformation=False,  # Slow, optional
-        scale=True,
-        scale_range=(0.9, 1.1),
-        **kwargs
-    )
+    # Default values
+    defaults = {
+        'horizontal_flip': True,
+        'vertical_flip': True,
+        'rotation': True,
+        'rotation_range': (-15, 15),
+        'color_jitter': True,
+        'elastic_deformation': False,  # Slow, optional
+        'scale': True,
+        'scale_range': (0.9, 1.1)
+    }
+    # Update defaults with provided kwargs
+    defaults.update(kwargs)
+    return AugmentationPipeline(**defaults)
 
 
 def get_val_augmentation(**kwargs):
     """Get augmentation pipeline for validation (minimal or none)."""
-    return AugmentationPipeline(
-        horizontal_flip=False,
-        vertical_flip=False,
-        rotation=False,
-        color_jitter=False,
-        elastic_deformation=False,
-        scale=False,
-        **kwargs
-    )
+    # Default values for validation (minimal augmentation)
+    defaults = {
+        'horizontal_flip': False,
+        'vertical_flip': False,
+        'rotation': False,
+        'rotation_range': (-15, 15),  # Not used if rotation=False
+        'color_jitter': False,
+        'elastic_deformation': False,
+        'scale': False,
+        'scale_range': (0.9, 1.1)  # Not used if scale=False
+    }
+    # Update defaults with provided kwargs
+    defaults.update(kwargs)
+    return AugmentationPipeline(**defaults)
 
 
 if __name__ == '__main__':
