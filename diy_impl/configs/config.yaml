@@ -1,0 +1,66 @@
+# HoVer-Net Training Configuration
+
+# Data
+data:
+  data_dir: "training_data"
+  split_file: "data/splits/train_val_test_split.json"
+  batch_size: 4
+  num_workers: 0  # Set to 0 on Windows, 4-8 on Linux/Mac
+  cache_masks: false
+  generate_hover: true
+
+# Model
+model:
+  backbone: "resnet34"  # resnet34, resnet50, or resnext50_32x4d
+  pretrained: true
+  num_types: null  # null = no type classification, or number of types
+  decoder_channels: 256
+
+# Loss
+loss:
+  nuclear_weight: 1.0
+  hover_weight: 1.0
+  type_weight: 0.5
+  hover_loss_type: "l1"  # l1 or l2
+  use_dice: true
+
+# Training
+training:
+  num_epochs: 100
+  learning_rate: 0.0001
+  weight_decay: 0.0001
+  optimizer: "adam"  # adam or adamw
+  scheduler: "cosine"  # cosine, step, or null
+  scheduler_params:
+    T_max: 100  # For cosine
+    step_size: 30  # For step
+    gamma: 0.1  # For step
+
+# Augmentation
+augmentation:
+  train:
+    horizontal_flip: true
+    vertical_flip: true
+    rotation: true
+    rotation_range: [-15, 15]
+    color_jitter: true
+    scale: true
+    scale_range: [0.9, 1.1]
+  val:
+    horizontal_flip: false
+    vertical_flip: false
+    rotation: false
+    color_jitter: false
+    scale: false
+
+# Output
+output:
+  save_dir: "outputs/checkpoints"
+  log_dir: "outputs/logs"
+  save_best: true
+  save_last: true
+  log_interval: 10
+  val_interval: 1
+
+# Device
+device: "cuda"  # cuda or cpu
