@@ -175,7 +175,21 @@ TypeError: AugmentationPipeline() got multiple values for keyword argument 'hori
 
 **Lösung**: Bereits behoben in der aktuellen Version. Falls das Problem weiterhin auftritt, aktualisieren Sie den Code.
 
-### 11. Schlechte Predictions
+### 11. ValueError: negative strides not supported
+
+**Fehler**:
+```
+ValueError: At least one stride in the given numpy array is negative, 
+and tensors with negative strides are not currently supported.
+```
+
+**Ursache**: Nach Augmentation-Operationen (z.B. `flip`) können NumPy-Arrays Views mit negativen Strides haben, die PyTorch nicht unterstützt.
+
+**Lösung**: Bereits behoben in der aktuellen Version. Arrays werden automatisch kopiert, wenn sie nicht kontinuierlich sind.
+
+Falls das Problem weiterhin auftritt, stellen Sie sicher, dass Sie die neueste Version des Codes haben.
+
+### 12. Schlechte Predictions
 
 **Mögliche Ursachen**:
 1. Modell nicht ausreichend trainiert → Mehr Epochs

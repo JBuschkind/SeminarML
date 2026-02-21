@@ -116,10 +116,18 @@ class NucleusDataset(Dataset):
             image = data['image']
             masks = {k: v for k, v in data.items() if k != 'image'}
         
+        # Helper function to ensure array is contiguous
+        def ensure_contiguous(arr):
+            """Ensure array is contiguous (no negative strides)."""
+            if not arr.flags['C_CONTIGUOUS']:
+                return arr.copy()
+            return arr
+        
         # Convert to tensors
         # Image: (H, W, C) -> (C, H, W)
         if len(image.shape) == 3:
             image = np.transpose(image, (2, 0, 1))
+        image = ensure_contiguous(image)
         image = torch.from_numpy(image).float()
         
         # Normalize image to [0, 1]
@@ -133,18 +141,21 @@ class NucleusDataset(Dataset):
         }
         
         # Nuclear mask
-        nuclear = torch.from_numpy(masks['nuclear']).long()
+        nuclear = ensure_contiguous(masks['nuclear'])
+        nuclear = torch.from_numpy(nuclear).long()
         result['nuclear'] = nuclear
         
         # Instance map
-        instance = torch.from_numpy(masks['instance']).long()
+        instance = ensure_contiguous(masks['instance'])
+        instance = torch.from_numpy(instance).long()
         result['instance'] = instance
         
         # HoVer maps
         if 'hover' in masks and masks['hover'] is not None:
-            hover = torch.from_numpy(masks['hover']).float()
+            hover = masks['hover']
             # Convert from (H, W, 2) to (2, H, W)
-            hover = np.transpose(masks['hover'], (2, 0, 1))
+            hover = np.transpose(hover, (2, 0, 1))
+            hover = ensure_contiguous(hover)
             hover = torch.from_numpy(hover).float()
             result['hover'] = hover
         
