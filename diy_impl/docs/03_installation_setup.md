@@ -122,7 +122,19 @@ diy_impl/
 pip install -r requirements.txt
 ```
 
-### Problem 2: CUDA nicht verfügbar
+### Problem 2: OpenCV libGL.so.1 Fehler (Linux)
+
+**Symptom**: `ImportError: libGL.so.1: cannot open shared object file`
+
+**Lösung**: Verwenden Sie `opencv-python-headless` statt `opencv-python`:
+```bash
+pip uninstall opencv-python
+pip install opencv-python-headless
+```
+
+Oder installieren Sie `requirements.txt` neu (enthält bereits headless Version).
+
+### Problem 3: CUDA nicht verfügbar
 
 **Symptom**: `torch.cuda.is_available()` gibt `False` zurück
 
@@ -131,7 +143,7 @@ pip install -r requirements.txt
 2. Installieren Sie PyTorch mit CUDA-Unterstützung (siehe oben)
 3. Falls keine GPU vorhanden: Training funktioniert auch auf CPU (langsamer)
 
-### Problem 3: Windows Multi-Processing Fehler
+### Problem 4: Windows Multi-Processing Fehler
 
 **Symptom**: `RuntimeError` bei DataLoader mit `num_workers > 0`
 
@@ -141,7 +153,7 @@ pip install -r requirements.txt
 dataloaders = get_dataloaders(..., num_workers=0)
 ```
 
-### Problem 4: Out of Memory
+### Problem 5: Out of Memory
 
 **Symptom**: `RuntimeError: CUDA out of memory`
 

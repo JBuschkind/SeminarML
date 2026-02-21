@@ -35,7 +35,7 @@ Diese Dokumentation beschreibt alle Komponenten des HoVer-Net Projekts für die 
 ### 7. Technische Details
 - [Datenformat](16_datenformat.md)
 - [Performance Optimierungen](17_performance.md)
-- [Troubleshooting](18_troubleshooting.md)
+- [Troubleshooting](18_troubleshooting.md) ✅ **NEU**
 
 ### 8. Status
 - [Implementierungs-Status](IMPLEMENTATION_STATUS.md)
