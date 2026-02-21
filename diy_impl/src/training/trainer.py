@@ -83,6 +83,8 @@ class Trainer:
         # TensorBoard writer (optional)
         if TENSORBOARD_AVAILABLE:
             self.writer = SummaryWriter(log_dir=str(self.log_dir))
+            print(f"TensorBoard logging enabled. Logs saved to: {self.log_dir}")
+            print(f"Start TensorBoard with: tensorboard --logdir {self.log_dir.parent}")
         else:
             self.writer = None
             print("Warning: TensorBoard not available. Install with: pip install tensorboard")

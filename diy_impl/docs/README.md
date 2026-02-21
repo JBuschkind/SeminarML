@@ -40,6 +40,9 @@ Diese Dokumentation beschreibt alle Komponenten des HoVer-Net Projekts für die 
 ### 8. Status
 - [Implementierungs-Status](IMPLEMENTATION_STATUS.md)
 
+### 9. Tools
+- [TensorBoard Anleitung](TENSORBOARD_ANLEITUNG.md) ✅ **NEU**
+
 ## 🎯 Zielgruppe
 
 Diese Dokumentation richtet sich an:

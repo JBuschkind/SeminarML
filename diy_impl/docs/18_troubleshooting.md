@@ -86,16 +86,36 @@ venv\Scripts\activate
 source venv/bin/activate
 ```
 
-### 5. TensorBoard nicht verfügbar
+### 5. TensorBoard nicht verfügbar oder keine Logs sichtbar
 
 **Warnung**: `TensorBoard not available`
 
-**Lösung** (optional):
+**Lösung**:
 ```bash
 pip install tensorboard
 ```
 
-Das Training funktioniert auch ohne TensorBoard, nur ohne Logging.
+**Keine Logs in TensorBoard sichtbar?**
+
+1. **TensorBoard im richtigen Verzeichnis starten**:
+   ```bash
+   # Vom Projekt-Root-Verzeichnis
+   tensorboard --logdir outputs/logs
+   ```
+
+2. **Warten Sie, bis Logs geschrieben wurden**:
+   - Logs werden alle `log_interval` Batches geschrieben (Standard: 10)
+   - Prüfen Sie, ob Dateien existieren: `ls outputs/logs/`
+
+3. **Verifizieren Sie die Installation**:
+   ```bash
+   python scripts/test_tensorboard.py
+   ```
+
+4. **Prüfen Sie die Console-Ausgabe beim Training**:
+   - Sollte zeigen: "TensorBoard logging enabled. Logs saved to: ..."
+
+Siehe auch: [TensorBoard Anleitung](TENSORBOARD_ANLEITUNG.md)
 
 ### 6. Dateien nicht gefunden
 
