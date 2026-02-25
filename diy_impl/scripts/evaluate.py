@@ -7,6 +7,7 @@ import sys
 import argparse
 import yaml
 from pathlib import Path
+from typing import Optional
 import torch
 import numpy as np
 from tqdm import tqdm
