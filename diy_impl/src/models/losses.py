@@ -49,6 +49,8 @@ class CombinedBCEDiceLoss(nn.Module):
     """
     Combined Binary Cross-Entropy and Dice Loss.
     Often works better than either alone.
+    
+    Uses BCEWithLogitsLoss for Mixed Precision compatibility.
     """
     
     def __init__(self, bce_weight: float = 0.5, dice_weight: float = 0.5):
@@ -58,7 +60,8 @@ class CombinedBCEDiceLoss(nn.Module):
             dice_weight: Weight for Dice loss
         """
         super().__init__()
-        self.bce = nn.BCELoss()
+        # Use BCEWithLogitsLoss for Mixed Precision compatibility
+        self.bce = nn.BCEWithLogitsLoss()
         self.dice = DiceLoss()
         self.bce_weight = bce_weight
         self.dice_weight = dice_weight
@@ -66,7 +69,7 @@ class CombinedBCEDiceLoss(nn.Module):
     def forward(self, pred: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
         """
         Args:
-            pred: Predictions (B, 1, H, W) in [0, 1]
+            pred: Predictions (B, 1, H, W) - LOGITS (no sigmoid applied)
             target: Ground truth (B, 1, H, W) or (B, H, W) in {0, 1}
         """
         # Ensure target is in correct format
@@ -74,8 +77,12 @@ class CombinedBCEDiceLoss(nn.Module):
             target = target.unsqueeze(1)
         target = target.float()
         
+        # BCEWithLogitsLoss works with logits directly
         bce_loss = self.bce(pred, target)
-        dice_loss = self.dice(pred, target)
+        
+        # For Dice loss, we need probabilities [0, 1]
+        pred_probs = torch.sigmoid(pred)
+        dice_loss = self.dice(pred_probs, target)
         
         return self.bce_weight * bce_loss + self.dice_weight * dice_loss
 
@@ -166,7 +173,8 @@ class HoVerNetLoss(nn.Module):
         if use_dice:
             self.nuclear_loss = CombinedBCEDiceLoss(bce_weight=0.5, dice_weight=0.5)
         else:
-            self.nuclear_loss = nn.BCELoss()
+            # Use BCEWithLogitsLoss for Mixed Precision compatibility
+            self.nuclear_loss = nn.BCEWithLogitsLoss()
         
         # HoVer map loss
         self.hover_loss = HoVerLoss(loss_type=hover_loss_type)

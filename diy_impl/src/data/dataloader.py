@@ -11,7 +11,85 @@ from typing import Dict, List, Tuple, Optional
 from torch.utils.data import DataLoader
 import torch
 
-from .dataset import NucleusDataset, collate_fn
+from .dataset import NucleusDataset, NumpyNucleusDataset, collate_fn
+
+
+def _is_npy_data_dir(data_dir: str) -> bool:
+    """Return True if data_dir contains .npy files (flat or as only content)."""
+    data_path = Path(data_dir)
+    if not data_path.is_dir():
+        return False
+    files = list(data_path.glob("*.npy"))
+    return len(files) > 0
+
+
+def create_npy_splits(
+    data_dir: str,
+    train_ratio: float = 0.7,
+    val_ratio: float = 0.15,
+    test_ratio: float = 0.15,
+    random_seed: int = 42,
+    save_path: Optional[str] = None,
+    split_by_slide: bool = True,
+) -> Dict[str, List[str]]:
+    """
+    Create train/val/test split for a directory of .npy files.
+    Optionally split by slide (basename without _mirr_p0 etc.) to avoid leakage.
+    """
+    assert abs(train_ratio + val_ratio + test_ratio - 1.0) < 1e-6, "Ratios must sum to 1.0"
+    data_path = Path(data_dir)
+    all_files = [f.name for f in data_path.glob("*.npy")]
+    if not all_files:
+        return {"train": [], "val": [], "test": []}
+
+    if split_by_slide:
+        # e.g. TCGA-55-1594-01Z-00-DX1_001_mirr_p0.npy -> TCGA-55-1594-01Z-00-DX1_001
+        def slide_id(name: str) -> str:
+            stem = name.replace(".npy", "")
+            parts = stem.rsplit("_", 2)  # e.g. ['TCGA-55-1594-01Z-00-DX1_001', 'mirr', 'p0']
+            if len(parts) == 3 and parts[-1].startswith("p") and parts[-1][1:].isdigit():
+                return parts[0]
+            return stem
+
+        slide_to_files: Dict[str, List[str]] = {}
+        for f in all_files:
+            sid = slide_id(f)
+            slide_to_files.setdefault(sid, []).append(f)
+        slide_names = list(slide_to_files.keys())
+    else:
+        slide_to_files = {f: [f] for f in all_files}
+        slide_names = all_files
+
+    np.random.seed(random_seed)
+    np.random.shuffle(slide_names)
+    n = len(slide_names)
+    n_train = int(n * train_ratio)
+    n_val = int(n * val_ratio)
+    train_slides = slide_names[:n_train]
+    val_slides = slide_names[n_train : n_train + n_val]
+    test_slides = slide_names[n_train + n_val :]
+
+    splits = {
+        "train": [f for s in train_slides for f in slide_to_files[s]],
+        "val": [f for s in val_slides for f in slide_to_files[s]],
+        "test": [f for s in test_slides for f in slide_to_files[s]],
+    }
+
+    if save_path:
+        os.makedirs(os.path.dirname(save_path) or ".", exist_ok=True)
+        info = {
+            "train_images": splits["train"],
+            "val_images": splits["val"],
+            "test_images": splits["test"],
+            "n_train_images": len(splits["train"]),
+            "n_val_images": len(splits["val"]),
+            "n_test_images": len(splits["test"]),
+        }
+        with open(save_path, "w") as f:
+            json.dump(info, f, indent=2)
+        print(f"NPY split saved to {save_path}")
+        print(f"Train: {len(splits['train'])} files, Val: {len(splits['val'])}, Test: {len(splits['test'])}")
+    return splits
 
 
 def create_train_val_test_split(
@@ -138,13 +216,14 @@ def get_dataloaders(
     transform_val: Optional[callable] = None,
     cache_masks: bool = False,
     generate_hover: bool = True,
-    pin_memory: bool = True
+    pin_memory: bool = True,
+    data_format: Optional[str] = None,
 ) -> Dict[str, DataLoader]:
     """
     Create DataLoaders for train, validation, and test sets.
     
     Args:
-        data_dir: Root directory containing the dataset
+        data_dir: Root directory containing the dataset (training_data or trainingNPY)
         batch_size: Batch size for training
         num_workers: Number of worker processes for data loading
         split_file: Optional path to JSON file with split information
@@ -156,44 +235,59 @@ def get_dataloaders(
         cache_masks: Whether to cache masks in memory
         generate_hover: Whether to generate HoVer maps
         pin_memory: Whether to pin memory for faster GPU transfer
+        data_format: "npy" for .npy files (trainingNPY), None for TIF+XML (training_data)
         
     Returns:
         Dictionary with 'train', 'val', 'test' DataLoaders
     """
-    # Load or create splits
-    if split_file and os.path.exists(split_file):
-        splits = load_split_from_file(split_file)
+    use_npy = data_format == "npy" or (data_format is None and _is_npy_data_dir(data_dir))
+
+    if use_npy:
+        if split_file and os.path.exists(split_file):
+            splits = load_split_from_file(split_file)
+        else:
+            splits = create_npy_splits(
+                data_dir,
+                train_ratio=train_ratio,
+                val_ratio=val_ratio,
+                test_ratio=test_ratio,
+                save_path=split_file,
+            )
+        dataset_cls = NumpyNucleusDataset
+        list_key = "train"  # splits['train'] is list of .npy filenames
     else:
-        splits = create_train_val_test_split(
-            data_dir,
-            train_ratio=train_ratio,
-            val_ratio=val_ratio,
-            test_ratio=test_ratio
-        )
-    
+        if split_file and os.path.exists(split_file):
+            splits = load_split_from_file(split_file)
+        else:
+            splits = create_train_val_test_split(
+                data_dir,
+                train_ratio=train_ratio,
+                val_ratio=val_ratio,
+                test_ratio=test_ratio,
+            )
+        dataset_cls = NucleusDataset
+
     # Create datasets
-    train_dataset = NucleusDataset(
+    train_dataset = dataset_cls(
         data_dir,
-        splits['train'],
+        splits["train"],
         transform=transform_train,
         cache_masks=cache_masks,
-        generate_hover=generate_hover
+        generate_hover=generate_hover,
     )
-    
-    val_dataset = NucleusDataset(
+    val_dataset = dataset_cls(
         data_dir,
-        splits['val'],
+        splits["val"],
         transform=transform_val,
         cache_masks=cache_masks,
-        generate_hover=generate_hover
+        generate_hover=generate_hover,
     )
-    
-    test_dataset = NucleusDataset(
+    test_dataset = dataset_cls(
         data_dir,
-        splits['test'],
+        splits["test"],
         transform=transform_val,
         cache_masks=cache_masks,
-        generate_hover=generate_hover
+        generate_hover=generate_hover,
     )
     
     # Create DataLoaders

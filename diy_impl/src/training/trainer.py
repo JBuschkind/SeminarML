@@ -6,6 +6,7 @@ Handles training loop, validation, checkpointing, and logging
 import torch
 import torch.nn as nn
 import torch.optim as optim
+from torch.cuda.amp import autocast, GradScaler
 from torch.utils.data import DataLoader
 from pathlib import Path
 import time
@@ -96,6 +97,12 @@ class Trainer:
         self.train_losses = []
         self.val_losses = []
         
+        # Mixed Precision Training (saves ~50% VRAM)
+        self.use_amp = device == 'cuda' and torch.cuda.is_available()
+        self.scaler = GradScaler() if self.use_amp else None
+        if self.use_amp:
+            print("Mixed Precision Training enabled (AMP)")
+        
     def train_epoch(self) -> Dict[str, float]:
         """Train for one epoch."""
         self.model.train()
@@ -115,23 +122,39 @@ class Trainer:
             nuclear_target = batch['nuclear'].to(self.device)
             hover_target = batch['hover'].to(self.device)
             
-            # Forward pass
+            # Forward pass with Mixed Precision
             self.optimizer.zero_grad()
-            predictions = self.model(images)
             
-            # Prepare targets
-            targets = {
-                'nuclear': nuclear_target,
-                'hover': hover_target
-            }
-            
-            # Compute loss
-            losses = self.loss_fn(predictions, targets)
-            loss = losses['total_loss']
-            
-            # Backward pass
-            loss.backward()
-            self.optimizer.step()
+            if self.use_amp:
+                with autocast():
+                    predictions = self.model(images)
+                    # Prepare targets
+                    targets = {
+                        'nuclear': nuclear_target,
+                        'hover': hover_target
+                    }
+                    # Compute loss
+                    losses = self.loss_fn(predictions, targets)
+                    loss = losses['total_loss']
+                
+                # Backward pass with gradient scaling
+                self.scaler.scale(loss).backward()
+                self.scaler.step(self.optimizer)
+                self.scaler.update()
+            else:
+                predictions = self.model(images)
+                # Prepare targets
+                targets = {
+                    'nuclear': nuclear_target,
+                    'hover': hover_target
+                }
+                # Compute loss
+                losses = self.loss_fn(predictions, targets)
+                loss = losses['total_loss']
+                
+                # Backward pass
+                loss.backward()
+                self.optimizer.step()
             
             # Update learning rate
             if self.scheduler is not None:
@@ -188,17 +211,26 @@ class Trainer:
             nuclear_target = batch['nuclear'].to(self.device)
             hover_target = batch['hover'].to(self.device)
             
-            # Forward pass
-            predictions = self.model(images)
-            
-            # Prepare targets
-            targets = {
-                'nuclear': nuclear_target,
-                'hover': hover_target
-            }
-            
-            # Compute loss
-            losses = self.loss_fn(predictions, targets)
+            # Forward pass (with Mixed Precision if enabled)
+            if self.use_amp:
+                with autocast():
+                    predictions = self.model(images)
+                    # Prepare targets
+                    targets = {
+                        'nuclear': nuclear_target,
+                        'hover': hover_target
+                    }
+                    # Compute loss
+                    losses = self.loss_fn(predictions, targets)
+            else:
+                predictions = self.model(images)
+                # Prepare targets
+                targets = {
+                    'nuclear': nuclear_target,
+                    'hover': hover_target
+                }
+                # Compute loss
+                losses = self.loss_fn(predictions, targets)
             
             # Accumulate losses
             val_losses['total'] += losses['total_loss'].item()

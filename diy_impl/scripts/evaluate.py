@@ -37,7 +37,10 @@ def evaluate_model(
     device: str = 'cuda',
     save_predictions: bool = False,
     output_dir: Optional[Path] = None,
-    num_samples: Optional[int] = None
+    num_samples: Optional[int] = None,
+    nuclear_threshold: float = 0.5,
+    min_distance: int = 10,
+    min_instance_size: int = 30,
 ) -> dict:
     """
     Evaluate model on dataset.
@@ -94,9 +97,13 @@ def evaluate_model(
                     nuclear_pred,
                     hover_pred,
                     nuc_target,
-                    inst_target
+                    inst_target,
+                    threshold=nuclear_threshold,
+                    min_distance=min_distance,
+                    min_instance_size=min_instance_size,
                 )
-                
+                sample_name = batch['name'][i] if 'name' in batch else f'sample_{batch_idx}_{i}'
+                metrics['name'] = sample_name
                 all_metrics.append(metrics)
                 
                 # Save visualization if requested
@@ -106,12 +113,15 @@ def evaluate_model(
                     # Get instance map from predictions
                     from src.evaluation.metrics import get_instance_map_from_predictions
                     pred_instances = get_instance_map_from_predictions(
-                        nuclear_pred, hover_pred
+                        nuclear_pred, hover_pred,
+                        threshold=nuclear_threshold,
+                        min_distance=min_distance,
+                        min_instance_size=min_instance_size,
                     )
                     
                     # Visualize
                     pred_dict = {
-                        'nuclear': (nuclear_pred > 0.5).astype(np.uint8),
+                        'nuclear': (nuclear_pred > nuclear_threshold).astype(np.uint8),
                         'instance': pred_instances
                     }
                     target_dict = {
@@ -130,13 +140,13 @@ def evaluate_model(
                         show=False
                     )
     
-    # Compute average metrics
+    # Compute average metrics (only numeric keys)
     avg_metrics = {}
     for key in all_metrics[0].keys():
+        if key == 'name':
+            continue
         if isinstance(all_metrics[0][key], (int, float)):
             avg_metrics[key] = np.mean([m[key] for m in all_metrics])
-        else:
-            avg_metrics[key] = all_metrics[0][key]
     
     return avg_metrics, all_metrics
 
@@ -191,9 +201,10 @@ def main():
         data_dir=config['data']['data_dir'],
         batch_size=1,  # Evaluate one at a time for visualization
         num_workers=0,
-        split_file=config['data']['split_file'],
+        split_file=config['data'].get('split_file'),
         cache_masks=False,
-        generate_hover=config['data']['generate_hover']
+        generate_hover=config['data']['generate_hover'],
+        data_format=config['data'].get('data_format'),
     )
     
     dataloader = dataloaders[args.split]
@@ -214,25 +225,33 @@ def main():
     model.to(device)
     print(f"Loaded checkpoint from epoch {checkpoint['epoch']}")
     
-    # Output directory
-    output_dir = None
+    eval_cfg = config.get('evaluation', {})
+    eval_output_dir = Path(eval_cfg.get('output_dir', 'outputs/evaluation'))
+    predictions_dir = None
     if args.save_predictions:
-        output_dir = Path('outputs') / 'predictions' / args.split
-        output_dir.mkdir(parents=True, exist_ok=True)
-        print(f"Saving predictions to {output_dir}")
+        predictions_dir = eval_output_dir / 'predictions' / args.split
+        predictions_dir.mkdir(parents=True, exist_ok=True)
+        print(f"Saving predictions to {predictions_dir}")
     
     # Evaluate
     print("\n" + "="*60)
     print("Evaluating model...")
     print("="*60 + "\n")
     
+    nuclear_threshold = float(eval_cfg.get('nuclear_threshold', 0.5))
+    min_distance = int(eval_cfg.get('min_distance', 10))
+    min_instance_size = int(eval_cfg.get('min_instance_size', 30))
+
     avg_metrics, all_metrics = evaluate_model(
         model,
         dataloader,
         device=device,
         save_predictions=args.save_predictions,
-        output_dir=output_dir,
-        num_samples=args.num_samples
+        output_dir=predictions_dir,
+        num_samples=args.num_samples,
+        nuclear_threshold=nuclear_threshold,
+        min_distance=min_distance,
+        min_instance_size=min_instance_size,
     )
     
     # Print results
@@ -253,19 +272,42 @@ def main():
     print(f"  Target Instances:    {avg_metrics['num_target_instances']:.1f}")
     
     # Save results
-    results_path = Path('outputs') / 'evaluation_results.json'
+    results_path = eval_output_dir / 'evaluation_results.json'
     results_path.parent.mkdir(parents=True, exist_ok=True)
-    
+    round_decimals = int(eval_cfg.get('results_round_decimals', -1))  # -1 = no rounding
+    save_per_sample = eval_cfg.get('save_per_sample_metrics', True)
+
+    def _round_obj(obj):
+        if round_decimals < 0:
+            return obj
+        if isinstance(obj, float):
+            return round(obj, round_decimals)
+        if isinstance(obj, dict):
+            return {k: _round_obj(v) for k, v in obj.items()}
+        if isinstance(obj, list):
+            return [_round_obj(x) for x in obj]
+        return obj
+
+    summary = {}
+    if all_metrics:
+        numeric_keys = [k for k in all_metrics[0].keys() if k != 'name' and isinstance(all_metrics[0].get(k), (int, float))]
+        for key in numeric_keys:
+            vals = [m[key] for m in all_metrics]
+            summary[f'{key}_p50'] = float(np.percentile(vals, 50))
+            summary[f'{key}_p95'] = float(np.percentile(vals, 95))
+
     results = {
         'checkpoint': args.checkpoint,
         'split': args.split,
         'num_samples': len(all_metrics),
-        'average_metrics': avg_metrics,
-        'per_sample_metrics': all_metrics
+        'average_metrics': _round_obj(avg_metrics) if round_decimals >= 0 else avg_metrics,
+        'summary_percentiles': _round_obj(summary) if round_decimals >= 0 and summary else summary,
     }
-    
-    with open(results_path, 'w') as f:
-        json.dump(results, f, indent=2)
+    if save_per_sample:
+        results['per_sample_metrics'] = _round_obj(all_metrics) if round_decimals >= 0 else all_metrics
+
+    with open(results_path, 'w', encoding='utf-8') as f:
+        json.dump(results, f, indent=2, ensure_ascii=False)
     
     print(f"\nResults saved to {results_path}")
     print("="*60)

@@ -1,0 +1,19 @@
+### Python-Bytecode und Cache
+__pycache__/
+*.py[cod]
+*.pyo
+
+### Virtuelle Umgebungen
+venv*/
+
+### Projekt: Trainingsdaten und Artefakte (nicht versionieren)
+diy_impl/data/
+diy_impl/trainingNPY/
+diy_impl/trainingNPY.zip
+
+### Ergebnisse, Logs, Checkpoints
+diy_impl/outputs/
+
+### Sonstiges
+.DS_Store
+Thumbs.db

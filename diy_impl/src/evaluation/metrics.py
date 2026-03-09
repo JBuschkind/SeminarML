@@ -61,7 +61,9 @@ def pixel_accuracy(pred: np.ndarray, target: np.ndarray) -> float:
 def get_instance_map_from_predictions(
     nuclear_pred: np.ndarray,
     hover_pred: np.ndarray,
-    threshold: float = 0.5
+    threshold: float = 0.5,
+    min_distance: int = 10,
+    min_instance_size: int = 30,
 ) -> np.ndarray:
     """
     Convert nuclear and hover predictions to instance map using watershed.
@@ -70,6 +72,8 @@ def get_instance_map_from_predictions(
         nuclear_pred: Nuclear segmentation prediction (H, W) in [0, 1]
         hover_pred: HoVer map prediction (H, W, 2) in [-1, 1]
         threshold: Threshold for nuclear segmentation
+        min_distance: Minimum pixel distance between markers (larger = fewer instances)
+        min_instance_size: Remove instances smaller than this many pixels (reduces over-segmentation)
         
     Returns:
         Instance map (H, W) with unique IDs
@@ -83,15 +87,11 @@ def get_instance_map_from_predictions(
     # Compute distance transform for markers
     dist_transform = ndimage.distance_transform_edt(nuclear_binary)
     
-    # Find local maxima as markers using morphological operations
-    # This is a simplified approach - for better results, use proper peak detection
-    min_distance = 5
-    threshold = 0.3 * dist_transform.max()
-    
-    # Find local maxima using maximum filter
+    # Find local maxima as markers (larger min_distance => fewer, more stable markers)
+    marker_threshold = 0.3 * dist_transform.max()
     from scipy.ndimage import maximum_filter
     local_maxima = maximum_filter(dist_transform, size=min_distance) == dist_transform
-    local_maxima = local_maxima & (dist_transform > threshold)
+    local_maxima = local_maxima & (dist_transform > marker_threshold)
     
     # Create markers
     markers = np.zeros_like(nuclear_binary, dtype=np.int32)
@@ -103,22 +103,30 @@ def get_instance_map_from_predictions(
     
     # If no markers found, use distance transform directly
     if markers.sum() == 0:
-        # Use threshold on distance transform
         markers = (dist_transform > 0.5 * dist_transform.max()).astype(np.int32)
         markers = ndimage.label(markers)[0]
     
     # Create watershed mask using HoVer maps
-    # Use magnitude of HoVer vectors as elevation
     hover_magnitude = np.sqrt(hover_pred[:, :, 0]**2 + hover_pred[:, :, 1]**2)
-    
-    # Invert for watershed (watershed uses minima, we want maxima)
-    elevation = 1.0 - hover_magnitude
-    elevation = np.clip(elevation, 0, 1)
+    elevation = 1.0 - np.clip(hover_magnitude, 0, 1)
     
     # Apply watershed
     labels = watershed(elevation, markers, mask=nuclear_binary)
+    labels = labels.astype(np.int32)
     
-    return labels.astype(np.int32)
+    # Remove tiny instances (over-segmentation) and relabel
+    if min_instance_size > 0:
+        unique_ids = np.unique(labels)
+        unique_ids = unique_ids[unique_ids > 0]
+        new_labels = np.zeros_like(labels)
+        next_id = 1
+        for uid in unique_ids:
+            if (labels == uid).sum() >= min_instance_size:
+                new_labels[labels == uid] = next_id
+                next_id += 1
+        labels = new_labels
+    
+    return labels
 
 
 def compute_iou(inst1: np.ndarray, inst2: np.ndarray) -> float:
@@ -353,7 +361,9 @@ def evaluate_predictions(
     hover_pred: np.ndarray,
     nuclear_target: np.ndarray,
     instance_target: np.ndarray,
-    threshold: float = 0.5
+    threshold: float = 0.5,
+    min_distance: int = 10,
+    min_instance_size: int = 30,
 ) -> Dict[str, float]:
     """
     Evaluate predictions against ground truth.
@@ -364,13 +374,18 @@ def evaluate_predictions(
         nuclear_target: Ground truth nuclear segmentation (H, W) in {0, 1}
         instance_target: Ground truth instance map (H, W) with unique IDs
         threshold: Threshold for nuclear segmentation
+        min_distance: Min pixel distance between watershed markers
+        min_instance_size: Remove predicted instances smaller than this (pixels)
         
     Returns:
         Dictionary with all metrics
     """
     # Convert predictions to instance map
     pred_instances = get_instance_map_from_predictions(
-        nuclear_pred, hover_pred, threshold=threshold
+        nuclear_pred, hover_pred,
+        threshold=threshold,
+        min_distance=min_distance,
+        min_instance_size=min_instance_size,
     )
     
     # Ensure target is numpy array

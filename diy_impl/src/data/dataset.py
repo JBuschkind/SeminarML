@@ -14,7 +14,101 @@ from pathlib import Path
 import cv2
 
 from .xml_parser import parse_xml_annotations
-from .mask_generator import generate_masks
+from .mask_generator import generate_masks, generate_hover_maps
+
+
+class NumpyNucleusDataset(Dataset):
+    """
+    Dataset for nucleus segmentation from pre-processed .npy files.
+    Each .npy file contains a dict with keys: 'img', 'inst_map', 'type_map'.
+    """
+
+    def __init__(
+        self,
+        data_dir: str,
+        file_list: List[str],
+        transform: Optional[callable] = None,
+        cache_masks: bool = False,
+        generate_hover: bool = True,
+    ):
+        """
+        Args:
+            data_dir: Directory containing .npy files (e.g. trainingNPY)
+            file_list: List of .npy filenames to use
+            transform: Optional transform for image and masks
+            cache_masks: Cache computed hover maps in memory
+            generate_hover: Whether to compute HoVer maps from inst_map
+        """
+        self.data_dir = Path(data_dir)
+        self.file_list = [f if f.endswith('.npy') else f + '.npy' for f in file_list]
+        self.transform = transform
+        self.cache_masks = cache_masks
+        self.generate_hover = generate_hover
+        self.hover_cache = {} if cache_masks else None
+
+    def __len__(self) -> int:
+        return len(self.file_list)
+
+    def __getitem__(self, idx: int) -> Dict[str, torch.Tensor]:
+        path = self.data_dir / self.file_list[idx]
+        data = np.load(path, allow_pickle=True)
+        if data.shape == ():
+            data = data.item()
+        else:
+            data = dict(zip(data.dtype.names or ['img', 'inst_map', 'type_map'], data))
+
+        image = np.asarray(data['img'])  # (H, W, 3) uint8
+        inst_map = np.asarray(data['inst_map']).astype(np.int32)  # (H, W)
+        type_map = np.asarray(data.get('type_map', np.zeros_like(inst_map))).astype(np.int32)
+
+        nuclear = (inst_map > 0).astype(np.uint8)
+        original_shape = image.shape[:2]
+
+        if self.generate_hover:
+            if self.cache_masks and idx in self.hover_cache:
+                hover = self.hover_cache[idx]
+            else:
+                hover = generate_hover_maps(inst_map, nuclear)
+                if self.cache_masks:
+                    self.hover_cache[idx] = hover
+        else:
+            hover = None
+
+        masks = {
+            'nuclear': nuclear,
+            'instance': inst_map,
+            'hover': hover,
+        }
+
+        if self.transform:
+            data_out = {'image': image, **masks}
+            data_out = self.transform(data_out)
+            image = data_out['image']
+            masks = {k: v for k, v in data_out.items() if k != 'image'}
+
+        def ensure_contiguous(arr):
+            if not arr.flags['C_CONTIGUOUS']:
+                return arr.copy()
+            return arr
+
+        if len(image.shape) == 3:
+            image = np.transpose(image, (2, 0, 1))
+        image = ensure_contiguous(image)
+        image = torch.from_numpy(image).float()
+        if image.max() > 1.0:
+            image = image / 255.0
+
+        name = Path(self.file_list[idx]).stem
+        result = {
+            'image': image,
+            'name': name,
+            'nuclear': torch.from_numpy(ensure_contiguous(masks['nuclear'])).long(),
+            'instance': torch.from_numpy(ensure_contiguous(masks['instance'])).long(),
+        }
+        if masks['hover'] is not None:
+            hover = np.transpose(masks['hover'], (2, 0, 1))
+            result['hover'] = torch.from_numpy(ensure_contiguous(hover)).float()
+        return result
 
 
 class NucleusDataset(Dataset):

@@ -97,11 +97,12 @@ def main():
         data_dir=config['data']['data_dir'],
         batch_size=config['data']['batch_size'],
         num_workers=config['data']['num_workers'],
-        split_file=config['data']['split_file'],
+        split_file=config['data'].get('split_file'),
         transform_train=train_aug,
         transform_val=val_aug,
         cache_masks=config['data']['cache_masks'],
-        generate_hover=config['data']['generate_hover']
+        generate_hover=config['data']['generate_hover'],
+        data_format=config['data'].get('data_format'),
     )
     
     print(f"Train batches: {len(dataloaders['train'])}")

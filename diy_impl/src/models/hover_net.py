@@ -257,8 +257,8 @@ class HoVerNet(nn.Module):
             nn.Conv2d(decoder_channels, 64, kernel_size=3, padding=1),
             nn.BatchNorm2d(64),
             nn.ReLU(inplace=True),
-            nn.Conv2d(64, 1, kernel_size=1),
-            nn.Sigmoid()  # Binary output [0, 1]
+            nn.Conv2d(64, 1, kernel_size=1)
+            # No Sigmoid - will use BCEWithLogitsLoss (better for Mixed Precision)
         )
         
         # 2. HoVer Map Head
@@ -292,7 +292,7 @@ class HoVerNet(nn.Module):
             
         Returns:
             Dictionary with:
-                - 'nuclear': Nuclear segmentation (B, 1, H, W) [0, 1]
+                - 'nuclear': Nuclear segmentation logits (B, 1, H, W) - apply sigmoid to get [0, 1]
                 - 'hover': HoVer maps (B, 2, H, W) [-1, 1]
                 - 'type': Type classification (B, num_types, H, W) if num_types > 0
         """
