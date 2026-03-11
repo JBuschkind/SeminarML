@@ -1,0 +1,107 @@
+# HoVer-Net Training Configuration
+#
+# --- Tuning bei unbefriedigenden Ergebnissen ---
+# Typische Probleme und Anpassungen:
+#
+# 1) Verschmelzene Kerne (mehrere Kerne als ein Objekt):
+#    - loss.hover_weight erhöhen (z.B. 1.5–2.0), damit HoVer-Trennung stärker gelernt wird
+#    - loss.hover_loss_type: "l2" kann glattere Vektorfelder fördern
+#    - training.num_epochs erhöhen (Modell braucht mehr Zeit für HoVer)
+#    - model.decoder_channels erhöhen (z.B. 512) für mehr Kapazität
+#
+# 2) Viele falsch-positive / Rauschen als Kerne segmentiert:
+#    - evaluation.nuclear_threshold erhöhen (z.B. 0.6–0.7)
+#    - loss.nuclear_weight beibehalten, ggf. use_dice: true für bessere Balance
+#    - augmentation stärker (scale_range, rotation_range) für bessere Generalisierung
+#
+# 3) Zackige / unruhige Konturen:
+#    - loss.use_dice: true (Dice glättet oft besser als reines BCE)
+#    - augmentation.elastic_deformation aktivieren (in augmentations.py)
+#    - training.learning_rate verringern für feinere Konvergenz (z.B. 5e-5)
+#
+# 4) Kerne werden übersehen (zu wenig Detektionen):
+#    - evaluation.nuclear_threshold senken (z.B. 0.4)
+#    - loss.nuclear_weight leicht erhöhen
+#    - training.num_epochs prüfen (Unteranpassung?)
+#
+# 5) Training instabil / Loss springt:
+#    - training.learning_rate senken (z.B. 5e-5)
+#    - training.batch_size bei GPU-Speicher erhöhen (z.B. 2)
+#    - scheduler: "cosine" mit T_max = num_epochs
+
+# Data
+data:
+  data_dir: "testingNPY"
+  data_format: "npy"  # "npy" for trainingNPY (.npy with img, inst_map, type_map), null for TIF+XML
+  #split_file: "data/splits/train_val_test_npy.json"  # optional; created automatically if missing
+  batch_size: 1  # Reduced for 8GB GPU (RTX 3070)
+  num_workers: 0  # Set to 0 on Windows, 4-8 on Linux/Mac
+  cache_masks: true
+  generate_hover: true
+
+# Model
+model:
+  backbone: "resnet34"  # resnet34, resnet50, or resnext50_32x4d
+  pretrained: true
+  num_types: null  # null = no type classification, or number of types
+  decoder_channels: 256
+
+# Loss
+loss:
+  nuclear_weight: 1.6
+  hover_weight: 1.8
+  type_weight: 0.5
+  hover_loss_type: "l2"  # l1 or l2
+  use_dice: true
+
+# Training
+training:
+  num_epochs: 500
+  learning_rate: 0.000001
+  weight_decay: 0.00001
+  optimizer: "adam"  # adam or adamw
+  scheduler: "null"  # cosine, step, or null
+  scheduler_params:
+    T_max: 500  # For cosine
+    step_size: 30  # For step
+    gamma: 0.1  # For step
+
+# Augmentation
+augmentation:
+  train:
+    horizontal_flip: true
+    vertical_flip: true
+    rotation: true
+    rotation_range: [-15, 15]
+    color_jitter: true
+    scale: true
+    scale_range: [0.9, 1.1]
+    elastic_deformation: false  # true kann glattere Konturen fördern (langsamer)
+  val:
+    horizontal_flip: false
+    vertical_flip: false
+    rotation: false
+    color_jitter: false
+    scale: false
+
+# Output
+output:
+  save_dir: "outputs/checkpoints"
+  log_dir: "outputs/logs"
+  save_best: true
+  save_last: true
+  log_interval: 10
+  val_interval: 1
+
+# Evaluation / Inference (bei "45 Predicted vs 1.4 Target" → Over-Segmentierung)
+evaluation:
+  output_dir: "outputs/evaluation"  # Ordner für evaluation_results.json und (bei --save-predictions) predictions/
+  nuclear_threshold: 0.4   # Erhöhen (0.6) bei Falsch-Positiven, senken (0.4) bei verpassten Kernen
+  min_distance: 5        # Abstand zwischen Watershed-Markern (größer = weniger Instanzen)
+  min_instance_size: 10    # Kleine Objekte entfernen (weniger vorhergesagte Instanzen, bessere AJI/PQ)
+  # Ausgabe evaluation_results.json
+  results_round_decimals: 4   # Floats runden (lesbarer, kleinere Datei)
+  save_per_sample_metrics: true   # false = nur Durchschnitte + Summary (kleine Datei)
+
+# Device
+device: "cuda"  # cuda or cpu
